@@ -32,7 +32,7 @@ init_workspace()
 
 get_workdir()
 {
-	name="$1"
+	local name="$1"
 	echo "$TMPDIR/$name"
 }
 
@@ -53,7 +53,7 @@ find_debs()
 
 get_compress_opt()
 {
-	filename="$1"
+	local filename="$1"
 	case "$filename" in
 	  *.gz)
 		echo "-z"
@@ -77,9 +77,9 @@ get_compress_opt()
 
 extract_control()
 {
-	pkgfile="$1"
-	control_file="$(ar t "$pkgfile" | grep '^control\.' | sed 1q)" || die "Unable to locate control archive for package $pkgfile"
-	compress_opt="$(get_compress_opt "$control_file")" || die "Unable to determine decompression option for $pkgfile"
+	local pkgfile="$1"
+	local control_file="$(ar t "$pkgfile" | grep '^control\.' | sed 1q)" || die "Unable to locate control archive for package $pkgfile"
+	local compress_opt="$(get_compress_opt "$control_file")" || die "Unable to determine decompression option for $pkgfile"
 	ar p "$pkgfile" "$control_file" | tar -O $compress_opt -xf - ./control || die "Failure extracting control file from package $pkgfile"
 }
 
@@ -90,9 +90,9 @@ trim_word()
 
 control_arch()
 {
-	file="$1"
+	local file="$1"
 	test -f "$file" || die "Control file $file does not exist."
-	arch="$(trim_word "$(grep '^Architecture: ' "$file" | sed -e 's/^Architecture: \(.*\)/\1/')")"
+	local arch="$(trim_word "$(grep '^Architecture: ' "$file" | sed -e 's/^Architecture: \(.*\)/\1/')")"
 	if [ $? -ne 0 ] || [ -z "$arch" ]; then
 		die "Unable to determine package architecture"
 	fi
@@ -101,7 +101,7 @@ control_arch()
 
 control_description()
 {
-	file="$1"
+	local file="$1"
 	awk '
 BEGIN { do_print=0; }
 /^[^ ]/ { if (do_print) do_print = 0; }
@@ -113,24 +113,24 @@ BEGIN { do_print=0; }
 
 extract_package_info()
 {
-	POOL_PATH="$1"
+	local POOL_PATH="$1"
 	# pool-relative path to the package.
-	PKG_POOL_PATH="$2"
-	PKG_META_DIR="$3"
-	DEBFILE="$POOL_PATH/$PKG_POOL_PATH"
+	local PKG_POOL_PATH="$2"
+	local PKG_META_DIR="$3"
+	local DEBFILE="$POOL_PATH/$PKG_POOL_PATH"
 
 	rm -rf "$PKG_META_DIR"
 	mkdir -p "$PKG_META_DIR"
 
-	control_file="$(ar t "$DEBFILE" | sed -n '2p')"
-	data_file="$(ar t "$DEBFILE" | sed -n '3p')"
+	local control_file="$(ar t "$DEBFILE" | sed -n '2p')"
+	local data_file="$(ar t "$DEBFILE" | sed -n '3p')"
 
-	control_decompress_opt="$(get_compress_opt "$control_file")"
-	data_decompress_opt="$(get_compress_opt "$data_file")"
+	local control_decompress_opt="$(get_compress_opt "$control_file")"
+	local data_decompress_opt="$(get_compress_opt "$data_file")"
 
 	extract_control "$DEBFILE" > "$PKG_META_DIR/control" || die "Unable to extract package control file"
 
-	ARCH="$(control_arch "$PKG_META_DIR/control")" || die "Unabled to extract package architecture"
+	local ARCH="$(control_arch "$PKG_META_DIR/control")" || die "Unabled to extract package architecture"
 	echo "$ARCH" > "$PKG_META_DIR/architecture"
 
 	# Link the package file.
@@ -143,27 +143,27 @@ extract_package_info()
 build_packages_entry()
 {
 	# pkg-dir-relative package file name
-	pkg_metadir="$1"
-	packages_file="$2"
+	local pkg_metadir="$1"
+	local packages_file="$2"
 
-	control_file="$pkg_metadir/control"
+	local control_file="$pkg_metadir/control"
 
 	if [ -s "$packages_file" ]; then
 		echo ""
 	fi
 
 	# Packages paragraphs must begin with the Package: field, so make sure that happens.
-	package_field_count="$(grep '^Package: ' "$control_file" | wc -l)"
+	local package_field_count="$(grep '^Package: ' "$control_file" | wc -l)"
 	if [ "$package_field_count" -gt 1 ]; then
 		die "Package has multiple Package: entries, control file is invalid."
 	fi
 
-	package_field="$(grep '^Package: ' "$control_file" | sed 1q)" || die "Package control file does not include a Package field, it is invalid."
+	local package_field="$(grep '^Package: ' "$control_file" | sed 1q)" || die "Package control file does not include a Package field, it is invalid."
 	echo "$package_field"
 
-	description="$(control_description "$control_file")" || die "Unable to extract package control description"
+	local description="$(control_description "$control_file")" || die "Unable to extract package control description"
 	echo "$description" > latest_description.txt
-	md5sum_checksum="$(echo "$description" | md5sum | awk '{print $1}')" || die "Error checksumming package description"
+	local md5sum_checksum="$(echo "$description" | md5sum | awk '{print $1}')" || die "Error checksumming package description"
 	# Note that we avoid stripping possibly invalid duplicate Package:
 	# fields by bailing out if there is more than one of them above.
 	cat "$control_file" | grep -v '^Package: ' || die "Error copying package control paragraph to Packages index"
@@ -176,9 +176,9 @@ build_packages_entry()
 
 lines_list()
 {
-	separator="$1"
-	input="$2"
-	list=""
+	local separator="$1"
+	local input="$2"
+	local list=""
 	echo "$input" |
 	(while IFS="" read -r item; do
 		if ! [ -z "$list" ]; then
@@ -190,11 +190,11 @@ lines_list()
 
 file_hash_info()
 {
-	algo="$1"
-	base_dir="$2"
-	path="$3"
+	local algo="$1"
+	local base_dir="$2"
+	local path="$3"
 
-	hash_cmd="${algo}sum"
+	local hash_cmd="${algo}sum"
 
 	# <hash> <byte size> <path> (du provides both path and size -- be careful about the paths used)
 	(cd "$base_dir"; echo "$("$hash_cmd" "$path" | awk '{print $1}') $(du -b $path)")
@@ -202,13 +202,13 @@ file_hash_info()
 
 build_release()
 {
-	repo="$1"
-	meta="$2"
+	local repo="$1"
+	local meta="$2"
 
-	packages_sha256="$(file_hash_info sha256 "$meta" Packages)" || die "Unable to checksum Packages index"
-	packages_sha512="$(file_hash_info sha512 "$meta" Packages)" || die "Unable to checksum Packages index"
+	local packages_sha256="$(file_hash_info sha256 "$meta" Packages)" || die "Unable to checksum Packages index"
+	local packages_sha512="$(file_hash_info sha512 "$meta" Packages)" || die "Unable to checksum Packages index"
 
-	arches="$(ls "$meta/architectures")"
+	local arches="$(ls "$meta/architectures")"
 	echo "Architectures: $(lines_list " " "$arches")"
 	echo "Date: $(date -R -u)"
 	echo "NotAutomatic: yes"
@@ -221,7 +221,7 @@ build_release()
 
 build_dist_meta()
 {
-	meta="$1"
+	local meta="$1"
 	echo "Building release index" >&2
 	build_release "$2" "$1" > "$meta/Release" || die "Failed to build Release file"
 
@@ -238,8 +238,8 @@ build_dist_meta()
 
 copy_meta_to_repo()
 {
-	meta="$1"
-	repo_dir="$2"
+	local meta="$1"
+	local repo_dir="$2"
 
 	cp "$meta/Release" "$meta/InRelease" "$meta/Release.gpg" "$repo_dir" || dir "Failed to copy release index files"
 	cp "$meta/Packages" "$repo_dir" || die "Failed to copy Packages index"
@@ -248,11 +248,11 @@ copy_meta_to_repo()
 
 add_packages_to_repo()
 {
-	pkglist="$1"
-	meta_dir="$2"
+	local pkglist="$1"
+	local meta_dir="$2"
 
-	index="$meta_dir/Packages"
-	pkg_meta_dir="$(get_workdir pkg)"
+	local index="$meta_dir/Packages"
+	local pkg_meta_dir="$(get_workdir pkg)"
 	while IFS="" read -r pkg; do
 		echo "Updating repo with package $pkg..." >&2
 		rm -rf "$pkg_meta_dir"
@@ -272,10 +272,10 @@ add_packages_to_repo()
 
 build_repo()
 {
-	pkg_dir="$1"
-	repo_dir="$2"
+	local pkg_dir="$1"
+	local repo_dir="$2"
 
-	meta_dir="$(get_workdir meta)"
+	local meta_dir="$(get_workdir meta)"
 
 	rm -rf "$meta_dir"
 	mkdir -p "$meta_dir"
@@ -287,7 +287,7 @@ build_repo()
 
 	rm -rf "$repo_dir"
 	mkdir -p "$repo_dir"
-	pkg_path="$(readlink -f "$pkg_dir")"
+	local pkg_path="$(readlink -f "$pkg_dir")"
 	# Link in the package pool
 	ln -s "$pkg_path" "$repo_dir/pool"
 	copy_meta_to_repo "$meta_dir" "$repo_dir" || die "Failed to copy repository information to repository"
