@@ -26,14 +26,17 @@ get_tempdir()
 
 cleanup_workspace()
 {
-	! [ -z "$KEEP_TMP" ] && exit 0
-	! [ -z "$TMPDIR" ] && [ -d "$TMPDIR" ] && rm -rf "$TMPDIR"
+	[ -z "$WORK_DIR" ] && rm -rf "$TMPDIR"
 	exit 0
 }
 
 init_workspace()
 {
-	TMPDIR="$(get_tempdir)"
+	if [ -z "$WORK_DIR" ]; then
+		TMPDIR="$(get_tempdir)"
+	else
+		TMPDIR="$WORK_DIR"
+	fi
 }
 
 get_workdir()
