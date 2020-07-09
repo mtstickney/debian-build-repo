@@ -113,31 +113,32 @@ BEGIN { do_print=0; }
 
 extract_package_info()
 {
-	local POOL_PATH="$1"
+	local pool_path="$1"
 	# pool-relative path to the package.
-	local PKG_POOL_PATH="$2"
-	local PKG_META_DIR="$3"
-	local DEBFILE="$POOL_PATH/$PKG_POOL_PATH"
+	local pkg_pool_path="$2"
+	local pkg_meta_dir="$3"
 
-	rm -rf "$PKG_META_DIR"
-	mkdir -p "$PKG_META_DIR"
+	local debfile="$pool_path/$pkg_pool_path"
 
-	local control_file="$(ar t "$DEBFILE" | sed -n '2p')"
-	local data_file="$(ar t "$DEBFILE" | sed -n '3p')"
+	rm -rf "$pkg_meta_dir"
+	mkdir -p "$pkg_meta_dir"
+
+	local control_file="$(ar t "$debfile" | sed -n '2p')"
+	local data_file="$(ar t "$debfile" | sed -n '3p')"
 
 	local control_decompress_opt="$(get_compress_opt "$control_file")"
 	local data_decompress_opt="$(get_compress_opt "$data_file")"
 
-	extract_control "$DEBFILE" > "$PKG_META_DIR/control" || die "Unable to extract package control file"
+	extract_control "$debfile" > "$pkg_meta_dir/control" || die "Unable to extract package control file"
 
-	local ARCH="$(control_arch "$PKG_META_DIR/control")" || die "Unabled to extract package architecture"
-	echo "$ARCH" > "$PKG_META_DIR/architecture"
+	local ARCH="$(control_arch "$pkg_meta_dir/control")" || die "Unabled to extract package architecture"
+	echo "$ARCH" > "$pkg_meta_dir/architecture"
 
 	# Link the package file.
-	ln -s "$DEBFILE" "$PKG_META_DIR/package.deb"
+	ln -s "$debfile" "$pkg_meta_dir/package.deb"
 
 	# Record the package's pool-relative path
-	echo "$PKG_POOL_PATH" > "$PKG_META_DIR/path"
+	echo "$pkg_pool_path" > "$pkg_meta_dir/path"
 }
 
 build_packages_entry()
