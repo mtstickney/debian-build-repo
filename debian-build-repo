@@ -52,9 +52,12 @@ trap on_exit EXIT
 PKGDIR="$1"
 REPODIR="$2"
 
-find_debs()
+find_dist_debs()
 {
-	(cd "$1"; du -a . | awk '{print $2}' | grep '\.deb$' | sed -e 's|^./||')
+	local pkgdir="$1"
+	local dist_name="$2"
+
+	(cd "$pkgdir"; du -a "$dist_name" | awk '{print $2}' | grep '\.deb$')
 }
 
 get_compress_opt()
@@ -128,6 +131,14 @@ extract_package_info()
 
 	rm -rf "$pkg_meta_dir"
 	mkdir -p "$pkg_meta_dir"
+
+	local component_count="$(echo "$pkg_pool_path" | awk -F '/' 'BEGIN {count=0;} {count = count + NF - 1;} END {print count;}')"
+	if [ "$component_count" -lt 2 ]; then
+		die "Package path '$pkg_pool_path' does not have at least a dist and component parent directory -- is this an archive-style package directory?"
+	fi
+	local dist_name="$(echo "$pkg_pool_path" | cut -f 1 -d '/')"
+	local component_name="$(echo "$pkg_pool_path" | cut -f 2 -d '/')"
+	echo "$component_name" > "$pkg_meta_dir/component"
 
 	local control_file="$(ar t "$debfile" | sed -n '2p')"
 	local data_file="$(ar t "$debfile" | sed -n '3p')"
@@ -207,29 +218,86 @@ file_hash_info()
 	(cd "$base_dir"; echo "$("$hash_cmd" "$path" | awk '{print $1}') $(du -b $path)")
 }
 
+set_dist_arch()
+{
+	local dist_dir="$1"
+	local arch_name="$2"
+
+	mkdir -p "$dist_dir/architectures"
+	touch "$dist_dir/architectures/$arch_name"
+}
+
+get_dist_architectures()
+{
+	local dist_dir="$1"
+	ls "$dist_dir/architectures"
+}
+
+set_dist_component()
+{
+	local dist_dir="$1"
+	local component_name="$2"
+
+	mkdir -p "$dist_dir/components"
+	touch "$dist_dir/components/$component_name"
+}
+
+get_dist_components()
+{
+	local dist_dir="$1"
+	ls "$dist_dir/components"
+}
+
+dist_index_files()
+{
+	local dist_dir="$1"
+
+	get_dist_components "$dist_dir" | (
+		while IFS="" read -r component; do
+			get_dist_architectures "$dist_dir" | (
+				while IFS="" read -r arch; do
+					# /All/ files in the dist meta are index files.
+					(cd "$dist_dir"; ls -d "$component/binary-$arch/"*)
+				done
+			)
+		done
+	)
+}
+
 build_release()
 {
 	local meta="$1"
+	local dist_name="$2"
 
-	local packages_sha256="$(file_hash_info sha256 "$meta" Packages)" || die "Unable to checksum Packages index"
-	local packages_sha512="$(file_hash_info sha512 "$meta" Packages)" || die "Unable to checksum Packages index"
-
-	local arches="$(ls "$meta/architectures")"
+	local arches="$(get_dist_architectures "$meta")"
 	echo "Architectures: $(lines_list " " "$arches")"
+	local components="$(get_dist_components "$meta")"
+	echo "Components: $(lines_list " " "$components")"
+	echo "Suite: $dist_name"
 	echo "Date: $(date -R -u)"
 	echo "NotAutomatic: yes"
 	echo "ButAutomaticUpgrades: yes"
 	echo "SHA256:"
-	echo " $packages_sha256"
+	dist_index_files "$meta" | (
+		while IFS="" read -r index; do
+			echo "  $(file_hash_info sha256 "$meta" "$index")" || die "Unable to checksum index file $index in $meta"
+		done
+	)
 	echo "SHA512:"
-	echo " $packages_sha512"
+	dist_index_files "$meta" | (
+		while IFS="" read -r index; do
+			echo "  $(file_hash_info sha512 "$meta" "$index")" || die "Unable to checksum index file $index in $meta"
+		done
+	)
 }
 
 build_dist_meta()
 {
 	local meta="$1"
+	local dist_name="$2"
+
 	echo "Building release index" >&2
-	build_release "$1" > "$meta/Release" || die "Failed to build Release file"
+	build_release "$meta" "$dist_name" > "$meta/Release" || die "Failed to build Release file"
 
 	if ! [ -z "$SKIP_SIGN" ]; then
 		exit 0
@@ -238,8 +306,6 @@ build_dist_meta()
 	gpg -a -s --clearsign --local-user "$KEY_ID" --output "$meta/InRelease" "$meta/Release" || die "Failed to create signed InRelease file"
 	echo "Creating detached Release index signature" >&2
 	gpg -a -b -s --local-user "$KEY_ID" --output "$meta/Release.gpg" "$meta/Release" || die "Failed to create detached signature file for Release index"
-	echo "Exporting signing key" >&2
-	gpg -a --export --output "$meta/Key.gpg" "$KEY_ID" || die "Failed to export public signing key"
 }
 
 copy_meta_to_repo()
@@ -247,17 +313,29 @@ copy_meta_to_repo()
 	local meta="$1"
 	local repo_dir="$2"
 
-	cp "$meta/Release" "$meta/InRelease" "$meta/Release.gpg" "$repo_dir" || dir "Failed to copy release index files"
-	cp "$meta/Packages" "$repo_dir" || die "Failed to copy Packages index"
-	cp "$meta/Key.gpg" "$repo_dir" || die "Failed to copy signing key"
+	ls "$meta" | (
+		while IFS="" read -r dist; do
+			dist_meta="$meta/$dist"
+			target="$repo_dir/dists/$dist"
+			mkdir -p "$target"
+			cp "$dist_meta/Release" "$target" || die "Failed to copy release index files"
+			if [ -z "$SKIP_SIGN" ]; then
+				cp "$dist_meta/InRelease" "$dist_meta/Release.gpg" "$target" || die "Failed to copy release index files"
+			fi
+			echo "$(get_dist_components "$dist_meta")" | (
+				while IFS="" read -r component; do
+					cp -r "$dist_meta/$component" "$target"
+				done
+			)
+		done
+	)
 }
 
-add_packages_to_repo()
+add_packages_to_dist()
 {
 	local pkg_dir="$1"
-	local meta_dir="$2"
+	local dist_meta_dir="$2"
 
-	local index="$meta_dir/Packages"
 	local pkg_meta_dir="$(get_workdir pkg)"
 	while IFS="" read -r pkg; do
 		echo "Updating repo with package $pkg..." >&2
@@ -266,14 +344,36 @@ add_packages_to_repo()
 		extract_package_info "$pkg_dir" "$pkg" "$pkg_meta_dir" || die "Unable to extract package information for package $pkg"
 
 		# Update the set of architectures.
-		mkdir -p "$meta_dir/architectures/"
-		touch "$meta_dir/architectures/$(cat "$pkg_meta_dir/architecture")" || die "Unable to record package architecture in repo meta"
+		local arch="$(cat "$pkg_meta_dir/architecture")" || die "Package meta is missing package architecture"
+		set_dist_arch "$dist_meta_dir" "$arch" || die "Unable to record package architecture in dist meta"
 
-		if ! [ -s "$index" ]; then
+		# Update the set of components.
+		local component="$(cat "$pkg_meta_dir/component")" || die "Package meta is missing package component"
+		set_dist_component "$dist_meta_dir" "$component" || die "Unable to record package component in dist meta"
+
+		# Create the arch directory for this component.
+		mkdir -p "$dist_meta_dir/$component/binary-$arch"
+		local index="$dist_meta_dir/$component/binary-$arch/Packages"
+
+		if [ -s "$index" ]; then
 			echo "" >> "$index"
 		fi
 		build_packages_entry "$pkg_meta_dir" >> "$index"
 	done
+}
+
+build_dist()
+{
+	local pkg_dir="$1"
+	local dist_name="$2"
+	local meta_dir="$3"
+
+	local dist_meta="$meta_dir/$dist_name"
+	mkdir "$dist_meta"
+	find_dist_debs "$pkg_dir" "$dist_name" > "$dist_meta/pkglist" || die "Error locating package files"
+	add_packages_to_dist "$pkg_dir" "$dist_meta" < "$dist_meta/pkglist" || die "Error adding packages to dist $dist_name"
+
+	build_dist_meta "$dist_meta" "$dist_name" || die "Failure building Release information for dist $dist_name"
 }
 
 build_repo()
@@ -286,10 +386,12 @@ build_repo()
 	rm -rf "$meta_dir"
 	mkdir -p "$meta_dir"
 
-	find_debs "$pkg_dir" > "$meta_dir/pkglist" || die "Error locating package files"
-	add_packages_to_repo "$pkg_dir" "$meta_dir" <"$meta_dir/pkglist" || die "Error adding packages to repo"
-
-	build_dist_meta "$meta_dir" || die "Failure building Release information"
+	ls "$pkg_dir" | (
+		while IFS="" read -r dist; do
+			echo "Building dist $dist" >&2
+			build_dist "$pkg_dir" "$dist" "$meta_dir" || die "Failure building dist $dist"
+		done
+	)
 
 	rm -rf "$repo_dir"
 	mkdir -p "$repo_dir"
@@ -297,6 +399,11 @@ build_repo()
 	# Link in the package pool
 	ln -s "$pkg_path" "$repo_dir/pool"
 	copy_meta_to_repo "$meta_dir" "$repo_dir" || die "Failed to copy repository information to repository"
+
+	if [ -z "$SKIP_SIGN" ]; then
+		echo "Exporting signing key" >&2
+		gpg -a --export --output "$repo_dir/Key.gpg" "$KEY_ID" || die "Failed to export public signing key"
+	fi
 }
 
 init_workspace || die "Failed to set up workspace"
