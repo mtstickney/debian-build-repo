@@ -249,23 +249,25 @@ build_packages_index()
 
 build_repo()
 {
-	rm -rf "$TMPDIR"
-	mkdir -p "$TMPDIR/meta"
+	meta_dir="$1"
+	repo_dir="$2"
 
-	find_debs "$PKGDIR" > "$TMPDIR/pkglist" || die "Error locating package files"
-	build_packages_index "$TMPDIR/pkglist" "$TMPDIR/meta/Packages" || die "Error building packages index"
+	rm -rf "$meta_dir"
+	mkdir -p "$meta_dir"
 
-	build_dist_meta "$TMPDIR/meta" || die "Failure building Release information"
+	find_debs "$PKGDIR" > "$meta_dir/pkglist" || die "Error locating package files"
+	build_packages_index "$meta_dir/pkglist" "$meta_dir/Packages" || die "Error building packages index"
 
-	rm -rf "$REPODIR"
-	mkdir -p "$REPODIR"
+	build_dist_meta "$meta_dir" || die "Failure building Release information"
+
+	rm -rf "$repo_dir"
+	mkdir -p "$repo_dir"
 	pkg_path="$(readlink -f "$PKGDIR")"
 	# Link in the package pool
-	ln -s "$pkg_path" "$REPODIR/pool"
-	copy_meta_to_repo "$TMPDIR/meta" "$REPODIR" || die "Failed to copy repository information to repository"
+	ln -s "$pkg_path" "$repo_dir/pool"
+	copy_meta_to_repo "$meta_dir" "$repo_dir" || die "Failed to copy repository information to repository"
 }
 
 rm -rf "$TMPDIR"
-mkdir -p "$TMPDIR/meta/"
 
 build_repo "$TMPDIR/meta" "$REPODIR" || die "Failure building repo at $REPODIR"
