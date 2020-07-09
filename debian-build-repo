@@ -203,8 +203,7 @@ file_hash_info()
 
 build_release()
 {
-	local repo="$1"
-	local meta="$2"
+	local meta="$1"
 
 	local packages_sha256="$(file_hash_info sha256 "$meta" Packages)" || die "Unable to checksum Packages index"
 	local packages_sha512="$(file_hash_info sha512 "$meta" Packages)" || die "Unable to checksum Packages index"
@@ -224,7 +223,7 @@ build_dist_meta()
 {
 	local meta="$1"
 	echo "Building release index" >&2
-	build_release "$2" "$1" > "$meta/Release" || die "Failed to build Release file"
+	build_release "$1" > "$meta/Release" || die "Failed to build Release file"
 
 	if ! [ -z "$SKIP_SIGN" ]; then
 		exit 0
