@@ -26,6 +26,7 @@ get_tempdir()
 
 cleanup_workspace()
 {
+	! [ -z "$KEEP_TMP" ] && exit 0
 	! [ -z "$TMPDIR" ] && [ -d "$TMPDIR" ] && rm -rf "$TMPDIR"
 	exit 0
 }
