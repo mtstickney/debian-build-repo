@@ -19,19 +19,32 @@ get_tempdir()
 	echo "tmp/"
 }
 
+cleanup_workspace()
+{
+	! [ -z "$TMPDIR" ] && [ -d "$TMPDIR" ] && rm -rf "$TMPDIR"
+	exit 0
+}
+
+init_workspace()
+{
+	TMPDIR="$(get_tempdir)"
+}
+
+get_workdir()
+{
+	name="$1"
+	echo "$TMPDIR/$name"
+}
+
+on_exit()
+{
+	cleanup_workspace
+}
+
+trap on_exit EXIT
+
 PKGDIR="$1"
 REPODIR="$2"
-TMPDIR="$(get_tempdir)"
-
-get_pkg_metadir()
-{
-	echo "$TMPDIR/pkg"
-}
-
-get_repo_metadir()
-{
-	echo "$TMPDIR/meta"
-}
 
 find_debs()
 {
@@ -236,26 +249,24 @@ copy_meta_to_repo()
 add_packages_to_repo()
 {
 	pkglist="$1"
+	meta_dir="$2"
 
-	meta_dir="$TMPDIR/meta"
-
-	first="yes"
+	index="$meta_dir/Packages"
+	pkg_meta_dir="$(get_workdir pkg)"
 	while IFS="" read -r pkg; do
 		echo "Updating repo with package $pkg..." >&2
-		rm -rf "$TMPDIR/pkg"
-		mkdir "$TMPDIR/pkg"
-		extract_package_info "$PKGDIR" "$pkg" "$TMPDIR/pkg" || die "Unable to extract package information for package $pkg"
+		rm -rf "$pkg_meta_dir"
+		mkdir -p "$pkg_meta_dir"
+		extract_package_info "$PKGDIR" "$pkg" "$pkg_meta_dir" || die "Unable to extract package information for package $pkg"
 
 		# Update the set of architectures.
 		mkdir -p "$meta_dir/architectures/"
-		touch "$meta_dir/architectures/$(cat "$TMPDIR/pkg/architecture")" || die "Unable to record package architecture in repo meta"
+		touch "$meta_dir/architectures/$(cat "$pkg_meta_dir/architecture")" || die "Unable to record package architecture in repo meta"
 
-		if [ "$first" != "yes" ]; then
-			echo ""
-		else
-			unset first
+		if ! [ -s "$index" ]; then
+			echo "" >> "$index"
 		fi
-		build_packages_entry "$TMPDIR/pkg"
+		build_packages_entry "$pkg_meta_dir" >> "$index"
 	done <"$pkglist"
 }
 
@@ -264,14 +275,13 @@ build_repo()
 	pkg_dir="$1"
 	repo_dir="$2"
 
-	tmpdir="$(get_tempdir)"
-	meta_dir="$tmpdir/meta"
+	meta_dir="$(get_workdir meta)"
 
 	rm -rf "$meta_dir"
 	mkdir -p "$meta_dir"
 
 	find_debs "$pkg_dir" > "$meta_dir/pkglist" || die "Error locating package files"
-	add_packages_to_repo "$meta_dir/pkglist" > "$meta_dir/Packages" || die "Error building packages index"
+	add_packages_to_repo "$meta_dir/pkglist" "$meta_dir" || die "Error building packages index"
 
 	build_dist_meta "$meta_dir" || die "Failure building Release information"
 
@@ -283,4 +293,5 @@ build_repo()
 	copy_meta_to_repo "$meta_dir" "$repo_dir" || die "Failed to copy repository information to repository"
 }
 
+init_workspace || die "Failed to set up workspace"
 build_repo "$PKGDIR" "$REPODIR" || die "Failure building repo at $REPODIR"
