@@ -198,15 +198,14 @@ build_packages_entry()
 lines_list()
 {
 	local separator="$1"
-	local input="$2"
 	local list=""
-	echo "$input" |
-	(while IFS="" read -r item; do
+	while IFS="" read -r item; do
 		if ! [ -z "$list" ]; then
 			list="${list}${separator}"
 		fi
 		list="${list}${item}"
-	done; echo $list)
+	done
+	echo $list
 }
 
 file_hash_info()
@@ -272,10 +271,8 @@ build_release()
 	local meta="$1"
 	local dist_name="$2"
 
-	local arches="$(get_dist_architectures "$meta")"
-	echo "Architectures: $(lines_list " " "$arches")"
-	local components="$(get_dist_components "$meta")"
-	echo "Components: $(lines_list " " "$components")"
+	echo "Architectures: $(get_dist_architectures "$meta" | lines_list " ")"
+	echo "Components: $(get_dist_components "$meta" | lines_list " ")"
 	echo "Suite: $dist_name"
 	echo "Date: $(date -R -u)"
 	echo "NotAutomatic: yes"
