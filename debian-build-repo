@@ -57,7 +57,7 @@ find_dist_debs()
 	local pkgdir="$1"
 	local dist_name="$2"
 
-	(cd "$pkgdir"; du -a "$dist_name" | awk '{print $2}' | grep '\.deb$')
+	(cd "$pkgdir"; du -a "$dist_name" --exclude '.*' | awk '{print $2}' | grep '\.deb$')
 }
 
 get_compress_opt()
