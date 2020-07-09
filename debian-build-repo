@@ -6,6 +6,11 @@ die()
 	exit 1
 }
 
+dbg()
+{
+	echo "DBG $1" >&2
+}
+
 if [ $# -ne 2 ]; then
 	die "Usage: debian-build-repo <pkgs_dir> <repo_dir>"
 fi
