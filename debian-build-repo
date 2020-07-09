@@ -10,7 +10,7 @@ if [ $# -ne 2 ]; then
 	die "Usage: debian-build-repo <pkgs_dir> <repo_dir>"
 fi
 
-if [ -z "$KEY_ID" ]; then
+if [ -z "$KEY_ID" ] && [ -z "$SKIP_SIGN" ]; then
 	die "Environment variable KEY_ID is unset; must be set to the ID of the signing key."
 fi
 
@@ -214,6 +214,10 @@ build_dist_meta()
 	meta="$1"
 	echo "Building release index" >&2
 	build_release "$2" "$1" > "$meta/Release" || die "Failed to build Release file"
+
+	if ! [ -z "$SKIP_SIGN" ]; then
+		exit 0
+	fi
 	echo "Creating clearsigned InRelease index" >&2
 	gpg -a -s --clearsign --local-user "$KEY_ID" --output "$meta/InRelease" "$meta/Release" || die "Failed to create signed InRelease file"
 	echo "Creating detached Release index signature" >&2
