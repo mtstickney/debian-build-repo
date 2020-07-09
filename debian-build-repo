@@ -21,7 +21,7 @@ fi
 
 get_tempdir()
 {
-	echo "tmp/"
+	mktemp --tmpdir -d debian-repo-build.XXXXXX
 }
 
 cleanup_workspace()
