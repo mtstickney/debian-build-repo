@@ -249,7 +249,7 @@ copy_meta_to_repo()
 
 add_packages_to_repo()
 {
-	local pkglist="$1"
+	local pkg_dir="$1"
 	local meta_dir="$2"
 
 	local index="$meta_dir/Packages"
@@ -258,7 +258,7 @@ add_packages_to_repo()
 		echo "Updating repo with package $pkg..." >&2
 		rm -rf "$pkg_meta_dir"
 		mkdir -p "$pkg_meta_dir"
-		extract_package_info "$PKGDIR" "$pkg" "$pkg_meta_dir" || die "Unable to extract package information for package $pkg"
+		extract_package_info "$pkg_dir" "$pkg" "$pkg_meta_dir" || die "Unable to extract package information for package $pkg"
 
 		# Update the set of architectures.
 		mkdir -p "$meta_dir/architectures/"
@@ -268,7 +268,7 @@ add_packages_to_repo()
 			echo "" >> "$index"
 		fi
 		build_packages_entry "$pkg_meta_dir" >> "$index"
-	done <"$pkglist"
+	done
 }
 
 build_repo()
@@ -282,7 +282,7 @@ build_repo()
 	mkdir -p "$meta_dir"
 
 	find_debs "$pkg_dir" > "$meta_dir/pkglist" || die "Error locating package files"
-	add_packages_to_repo "$meta_dir/pkglist" "$meta_dir" || die "Error building packages index"
+	add_packages_to_repo "$pkg_dir" "$meta_dir" <"$meta_dir/pkglist" || die "Error building packages index"
 
 	build_dist_meta "$meta_dir" || die "Failure building Release information"
 
