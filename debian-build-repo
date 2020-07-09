@@ -1,0 +1,271 @@
+#!/bin/sh
+
+die()
+{
+	echo "$1" >&2
+	exit 1
+}
+
+if [ $# -ne 2 ]; then
+	die "Usage: debian-build-repo <pkgs_dir> <repo_dir>"
+fi
+
+if [ -z "$KEY_ID" ]; then
+	die "Environment variable KEY_ID is unset; must be set to the ID of the signing key."
+fi
+
+get_tempdir()
+{
+	echo "tmp/"
+}
+
+PKGDIR="$1"
+REPODIR="$2"
+TMPDIR="$(get_tempdir)"
+
+get_pkg_metadir()
+{
+	echo "$TMPDIR/pkg"
+}
+
+get_repo_metadir()
+{
+	echo "$TMPDIR/meta"
+}
+
+find_debs()
+{
+	(cd "$1"; du -a . | awk '{print $2}' | grep '\.deb$' | sed -e 's|^./||')
+}
+
+get_compress_opt()
+{
+	filename="$1"
+	case "$filename" in
+	  *.gz)
+		echo "-z"
+	  ;;
+ 	  *.bz2)
+	        echo "-j"
+	  ;;
+	  *.xz)
+	        echo "-J"
+	  ;;
+	  *.lzma)
+	        echo "--lzma"
+	  ;;
+	  *.tar)
+	        echo ""
+	  ;;
+	  *)
+		die "Urecognized file extension for archive $pkgfile"
+	esac
+}
+
+extract_control()
+{
+	pkgfile="$1"
+	control_file="$(ar t "$pkgfile" | grep '^control\.' | sed 1q)" || die "Unable to locate control archive for package $pkgfile"
+	compress_opt="$(get_compress_opt "$control_file")" || die "Unable to determine decompression option for $pkgfile"
+	ar p "$pkgfile" "$control_file" | tar -O $compress_opt -xf - ./control || die "Failure extracting control file from package $pkgfile"
+}
+
+trim_word()
+{
+	echo "$1" | (read word; echo $word)
+}
+
+control_arch()
+{
+	file="$1"
+	test -f "$file" || die "Control file $file does not exist."
+	arch="$(trim_word "$(grep '^Architecture: ' "$file" | sed -e 's/^Architecture: \(.*\)/\1/')")"
+	if [ $? -ne 0 ] || [ -z "$arch" ]; then
+		die "Unable to determine package architecture"
+	fi
+	echo $arch
+}
+
+control_description()
+{
+	file="$1"
+	awk '
+BEGIN { do_print=0; }
+/^[^ ]/ { if (do_print) do_print = 0; }
+/^Description: / { do_print = 1; }
+{ if (do_print) print $0; }
+' "$file" | sed -e 's/^Description: //'
+	
+}
+
+extract_package_info()
+{
+	POOL_PATH="$1"
+	# pool-relative path to the package.
+	PKG_POOL_PATH="$2"
+	METADIR="$3"
+	PKG_META_DIR="$(get_pkg_metadir)"
+	DEBFILE="$POOL_PATH/$PKG_POOL_PATH"
+
+	rm -rf "$PKG_META_DIR"
+	mkdir -p "$PKG_META_DIR"
+
+	control_file="$(ar t "$DEBFILE" | sed -n '2p')"
+	data_file="$(ar t "$DEBFILE" | sed -n '3p')"
+
+	control_decompress_opt="$(get_compress_opt "$control_file")"
+	data_decompress_opt="$(get_compress_opt "$data_file")"
+
+	extract_control "$DEBFILE" > "$PKG_META_DIR/control" || die "Unable to extract package control file"
+
+	# Update the set of architectures.
+	mkdir -p "$METADIR/architectures/"
+	ARCH="$(control_arch "$PKG_META_DIR/control")"
+	touch "$METADIR/architectures/$ARCH"
+
+	# Link the package file.
+	ln -s "$DEBFILE" "$PKG_META_DIR/package.deb"
+
+	# Record the package's pool-relative path
+	echo "$PKG_POOL_PATH" > "$PKG_META_DIR/path"
+}
+
+build_packages_entry()
+{
+	# pkg-dir-relative package file name
+	pkg_metadir="$1"
+	packages_file="$2"
+
+	control_file="$pkg_metadir/control"
+
+	if [ -s "$packages_file" ]; then
+		echo ""
+	fi
+
+	# Packages paragraphs must begin with the Package: field, so make sure that happens.
+	package_field_count="$(grep '^Package: ' "$control_file" | wc -l)"
+	if [ "$package_field_count" -gt 1 ]; then
+		die "Package has multiple Package: entries, control file is invalid."
+	fi
+
+	package_field="$(grep '^Package: ' "$control_file" | sed 1q)" || die "Package control file does not include a Package field, it is invalid."
+	echo "$package_field"
+
+	description="$(control_description "$control_file")" || die "Unable to extract package control description"
+	echo "$description" > latest_description.txt
+	md5sum_checksum="$(echo "$description" | md5sum | awk '{print $1}')" || die "Error checksumming package description"
+	# Note that we avoid stripping possibly invalid duplicate Package:
+	# fields by bailing out if there is more than one of them above.
+	cat "$control_file" | grep -v '^Package: ' || die "Error copying package control paragraph to Packages index"
+	echo "Description-md5sum: $md5sum_checksum"
+	echo "Filename: pool/$(cat "$pkg_metadir/path")" || die "Unable to write pool-relative package path (!)"
+	echo "Size: $(du -b "$(readlink "$pkg_metadir/package.deb")" | cut -f 1)"
+	echo "SHA256: $(sha256sum $(readlink "$pkg_metadir/package.deb") | awk '{print $1}')" || die "Unable to compute package checksum"
+	echo "SHA512: $(sha512sum $(readlink "$pkg_metadir/package.deb") | awk '{print $1}')" || die "Unable to compute package checksum"
+}
+
+lines_list()
+{
+	separator="$1"
+	input="$2"
+	list=""
+	echo "$input" |
+	(while IFS="" read -r item; do
+		if ! [ -z "$list" ]; then
+			list="${list}${separator}"
+		fi
+		list="${list}${item}"
+	done; echo $list)
+}
+
+file_hash_info()
+{
+	algo="$1"
+	base_dir="$2"
+	path="$3"
+
+	hash_cmd="${algo}sum"
+
+	# <hash> <byte size> <path> (du provides both path and size -- be careful about the paths used)
+	(cd "$base_dir"; echo "$("$hash_cmd" "$path" | awk '{print $1}') $(du -b $path)")
+}
+
+build_release()
+{
+	repo="$1"
+	meta="$2"
+
+	packages_sha256="$(file_hash_info sha256 "$meta" Packages)" || die "Unable to checksum Packages index"
+	packages_sha512="$(file_hash_info sha512 "$meta" Packages)" || die "Unable to checksum Packages index"
+
+	arches="$(ls "$meta/architectures")"
+	echo "Architectures: $(lines_list " " "$arches")"
+	echo "Date: $(date -R -u)"
+	echo "NotAutomatic: yes"
+	echo "ButAutomaticUpgrades: yes"
+	echo "SHA256:"
+	echo " $packages_sha256"
+	echo "SHA512:"
+	echo " $packages_sha512"
+}
+
+build_dist_meta()
+{
+	meta="$1"
+	echo "Building release index" >&2
+	build_release "$2" "$1" > "$meta/Release" || die "Failed to build Release file"
+	echo "Creating clearsigned InRelease index" >&2
+	gpg -a -s --clearsign --local-user "$KEY_ID" --output "$meta/InRelease" "$meta/Release" || die "Failed to create signed InRelease file"
+	echo "Creating detached Release index signature" >&2
+	gpg -a -b -s --local-user "$KEY_ID" --output "$meta/Release.gpg" "$meta/Release" || die "Failed to create detached signature file for Release index"
+	echo "Exporting signing key" >&2
+	gpg -a --export --output "$meta/Key.gpg" "$KEY_ID" || die "Failed to export public signing key"
+}
+
+copy_meta_to_repo()
+{
+	meta="$1"
+	repo_dir="$2"
+
+	cp "$meta/Release" "$meta/InRelease" "$meta/Release.gpg" "$repo_dir" || dir "Failed to copy release index files"
+	cp "$meta/Packages" "$repo_dir" || die "Failed to copy Packages index"
+	cp "$meta/Key.gpg" "$repo_dir" || die "Failed to copy signing key"
+}
+
+build_packages_index()
+{
+	pkglist="$1"
+	index="$2"
+
+	while IFS="" read -r pkg; do
+		echo "Building index from package $pkg..." >&2
+		extract_package_info "$PKGDIR" "$pkg" "$TMPDIR/meta" || die "Unable to extract package information for package $pkg"
+		if [ -s "$index" ]; then
+			echo "" >> "$index"
+		fi
+		build_packages_entry "$TMPDIR/pkg" >> "$index"
+	done <"$pkglist"
+}
+
+build_dist()
+{
+	rm -rf "$TMPDIR"
+	mkdir -p "$TMPDIR/meta"
+
+	find_debs "$PKGDIR" > "$TMPDIR/pkglist" || die "Error locating package files"
+	build_packages_index "$TMPDIR/pkglist" "$TMPDIR/meta/Packages" || die "Error building packages index"
+
+	build_dist_meta "$TMPDIR/meta" || die "Failure building Release information"
+
+	rm -rf "$REPODIR"
+	mkdir -p "$REPODIR"
+	pkg_path="$(readlink -f "$PKGDIR")"
+	# Link in the package pool
+	ln -s "$pkg_path" "$REPODIR/pool"
+	copy_meta_to_repo "$TMPDIR/meta" "$REPODIR" || die "Failed to copy repository information to repository"
+}
+
+rm -rf "$TMPDIR"
+mkdir -p "$TMPDIR/meta/"
+
+build_dist "$TMPDIR/meta" "$REPODIR" || die "Failure building repo at $REPODIR"

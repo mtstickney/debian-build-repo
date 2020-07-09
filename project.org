@@ -1,0 +1,5 @@
+* About
+  The goal of this project is to create a shell script that can create
+  a debian package repository from a folder of packages, much like
+  apt-ftparchive, but just a shell script so I can use it on Arch
+  (where none of the debian native tools are packaged).
