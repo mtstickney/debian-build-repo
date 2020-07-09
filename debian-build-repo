@@ -103,8 +103,7 @@ extract_package_info()
 	POOL_PATH="$1"
 	# pool-relative path to the package.
 	PKG_POOL_PATH="$2"
-	METADIR="$3"
-	PKG_META_DIR="$(get_pkg_metadir)"
+	PKG_META_DIR="$3"
 	DEBFILE="$POOL_PATH/$PKG_POOL_PATH"
 
 	rm -rf "$PKG_META_DIR"
@@ -118,10 +117,8 @@ extract_package_info()
 
 	extract_control "$DEBFILE" > "$PKG_META_DIR/control" || die "Unable to extract package control file"
 
-	# Update the set of architectures.
-	mkdir -p "$METADIR/architectures/"
-	ARCH="$(control_arch "$PKG_META_DIR/control")"
-	touch "$METADIR/architectures/$ARCH"
+	ARCH="$(control_arch "$PKG_META_DIR/control")" || die "Unabled to extract package architecture"
+	echo "$ARCH" > "$PKG_META_DIR/architecture"
 
 	# Link the package file.
 	ln -s "$DEBFILE" "$PKG_META_DIR/package.deb"
@@ -236,14 +233,22 @@ copy_meta_to_repo()
 	cp "$meta/Key.gpg" "$repo_dir" || die "Failed to copy signing key"
 }
 
-build_packages_index()
+add_packages_to_repo()
 {
 	pkglist="$1"
 
+	meta_dir="$TMPDIR/meta"
+
 	first="yes"
 	while IFS="" read -r pkg; do
-		echo "Building index from package $pkg..." >&2
-		extract_package_info "$PKGDIR" "$pkg" "$TMPDIR/meta" || die "Unable to extract package information for package $pkg"
+		echo "Updating repo with package $pkg..." >&2
+		rm -rf "$TMPDIR/pkg"
+		mkdir "$TMPDIR/pkg"
+		extract_package_info "$PKGDIR" "$pkg" "$TMPDIR/pkg" || die "Unable to extract package information for package $pkg"
+
+		# Update the set of architectures.
+		mkdir -p "$meta_dir/architectures/"
+		touch "$meta_dir/architectures/$(cat "$TMPDIR/pkg/architecture")" || die "Unable to record package architecture in repo meta"
 
 		if [ "$first" != "yes" ]; then
 			echo ""
@@ -266,7 +271,7 @@ build_repo()
 	mkdir -p "$meta_dir"
 
 	find_debs "$pkg_dir" > "$meta_dir/pkglist" || die "Error locating package files"
-	build_packages_index "$meta_dir/pkglist" > "$meta_dir/Packages" || die "Error building packages index"
+	add_packages_to_repo "$meta_dir/pkglist" > "$meta_dir/Packages" || die "Error building packages index"
 
 	build_dist_meta "$meta_dir" || die "Failure building Release information"
 
