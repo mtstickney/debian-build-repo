@@ -247,7 +247,7 @@ build_packages_index()
 	done <"$pkglist"
 }
 
-build_dist()
+build_repo()
 {
 	rm -rf "$TMPDIR"
 	mkdir -p "$TMPDIR/meta"
@@ -268,4 +268,4 @@ build_dist()
 rm -rf "$TMPDIR"
 mkdir -p "$TMPDIR/meta/"
 
-build_dist "$TMPDIR/meta" "$REPODIR" || die "Failure building repo at $REPODIR"
+build_repo "$TMPDIR/meta" "$REPODIR" || die "Failure building repo at $REPODIR"
