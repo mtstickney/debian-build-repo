@@ -376,6 +376,17 @@ build_dist()
 	build_dist_meta "$dist_meta" "$dist_name" || die "Failure building Release information for dist $dist_name"
 }
 
+make_absolute_path()
+{
+	local path="$1"
+
+	if echo "$path" | grep -q '^/'; then
+		echo "$path"
+	else
+		echo "$PWD/$path"
+	fi
+}
+
 build_repo()
 {
 	local pkg_dir="$1"
@@ -395,7 +406,7 @@ build_repo()
 
 	rm -rf "$repo_dir"
 	mkdir -p "$repo_dir"
-	local pkg_path="$(readlink -f "$pkg_dir")"
+	local pkg_path="$(make_absolute_path "$pkg_dir")"
 	# Link in the package pool
 	ln -s "$pkg_path" "$repo_dir/pool"
 	copy_meta_to_repo "$meta_dir" "$repo_dir" || die "Failed to copy repository information to repository"
