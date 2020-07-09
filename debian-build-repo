@@ -282,7 +282,7 @@ build_repo()
 	mkdir -p "$meta_dir"
 
 	find_debs "$pkg_dir" > "$meta_dir/pkglist" || die "Error locating package files"
-	add_packages_to_repo "$pkg_dir" "$meta_dir" <"$meta_dir/pkglist" || die "Error building packages index"
+	add_packages_to_repo "$pkg_dir" "$meta_dir" <"$meta_dir/pkglist" || die "Error adding packages to repo"
 
 	build_dist_meta "$meta_dir" || die "Failure building Release information"
 
