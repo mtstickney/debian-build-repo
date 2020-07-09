@@ -239,15 +239,18 @@ copy_meta_to_repo()
 build_packages_index()
 {
 	pkglist="$1"
-	index="$2"
 
+	first="yes"
 	while IFS="" read -r pkg; do
 		echo "Building index from package $pkg..." >&2
 		extract_package_info "$PKGDIR" "$pkg" "$TMPDIR/meta" || die "Unable to extract package information for package $pkg"
-		if [ -s "$index" ]; then
-			echo "" >> "$index"
+
+		if [ "$first" != "yes" ]; then
+			echo ""
+		else
+			unset first
 		fi
-		build_packages_entry "$TMPDIR/pkg" >> "$index"
+		build_packages_entry "$TMPDIR/pkg"
 	done <"$pkglist"
 }
 
@@ -260,7 +263,7 @@ build_repo()
 	mkdir -p "$meta_dir"
 
 	find_debs "$PKGDIR" > "$meta_dir/pkglist" || die "Error locating package files"
-	build_packages_index "$meta_dir/pkglist" "$meta_dir/Packages" || die "Error building packages index"
+	build_packages_index "$meta_dir/pkglist" > "$meta_dir/Packages" || die "Error building packages index"
 
 	build_dist_meta "$meta_dir" || die "Failure building Release information"
 
