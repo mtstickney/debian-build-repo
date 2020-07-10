@@ -10,12 +10,26 @@ $ KEY_ID=<...> debian-build-repo path/to/pkgs/ path/to/repo/
 ```
 
 Where `pkgs/` is a directory of packages in the form
-`<dist>/<component>/package.db`. Packages files can be in any subpath
-under the component directory; this portion of the path will be
-ignored except for specifying the path to the package file. The key
-thing is that packages have to be grouped into directories of named
-dists, and within each dist directory packages must be grouped into
-directories of named components.
+`<dist>/<component>/package.db`. A very simple example:
+
+```
+$ tree pkgs/
+pkgs/
+└── stable
+    └── main
+        ├── loki-canary_1.5.0-0_amd64.deb
+        ├── loki-logs_1.5.0-0_amd64.deb
+        └── promtail_1.5.0-0_amd64.deb
+
+2 directories, 3 files
+```
+
+Packages files can be in any subpath under the component directory;
+this portion of the path will be ignored except for specifying the
+path to the package file. The key thing is that packages have to be
+grouped into directories of named dists, and within each dist
+directory packages must be grouped into directories of named
+components.
 
 The repository will be generated in the specified repository
 directory, with the package directory symlinked as `<repo dir>/pool`
