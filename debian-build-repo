@@ -165,13 +165,8 @@ build_packages_entry()
 {
 	# pkg-dir-relative package file name
 	local pkg_metadir="$1"
-	local packages_file="$2"
 
 	local control_file="$pkg_metadir/control"
-
-	if [ -s "$packages_file" ]; then
-		echo ""
-	fi
 
 	# Packages paragraphs must begin with the Package: field, so make sure that happens.
 	local package_field_count="$(grep '^Package: ' "$control_file" | wc -l)"
