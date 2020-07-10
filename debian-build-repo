@@ -29,7 +29,7 @@ get_tempdir()
 cleanup_workspace()
 {
 	[ -z "$WORK_DIR" ] && rm -rf "$TMPDIR"
-	exit 0
+	return 0
 }
 
 init_workspace()
@@ -336,7 +336,7 @@ build_dist_meta()
 	build_release "$meta" "$dist_name" > "$meta/Release" || die "Failed to build Release file"
 
 	if ! [ -z "$SKIP_SIGN" ]; then
-		exit 0
+		return 0
 	fi
 	echo "Creating clearsigned InRelease index" >&2
 	gpg -a -s --clearsign --local-user "$KEY_ID" --output "$meta/InRelease" "$meta/Release" || die "Failed to create signed InRelease file"
