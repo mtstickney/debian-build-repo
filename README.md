@@ -10,7 +10,8 @@ $ KEY_ID=<...> debian-build-repo path/to/pkgs/ path/to/repo/
 ```
 
 Where `pkgs/` is a directory of packages in the form
-`<dist>/<component>/package.db`. A very simple example:
+`<dist>/<component>/package.db`. A very simple example, with one dist
+(`stable`) consisting of one component (`main`):
 
 ```
 $ tree pkgs/
