@@ -95,6 +95,14 @@ extract_control()
 	ar p "$pkgfile" "$control_file" | tar -O $compress_opt -xf - ./control || die "Failure extracting control file from package $pkgfile"
 }
 
+extract_filelist()
+{
+	local pkgfile="$1"
+	local data_file="$(ar t "$pkgfile" | grep '^data\.' | sed 1q)" || die "Unable to locate data archive for package $pkgfile"
+	local compress_opt="$(get_compress_opt "$data_file")" || die "Unable to determine compression option for $pkgfile"
+	ar p "$pkgfile" "$data_file" | tar $compress_opt -tf - | grep -v '/$' | sed -e 's|^./||' || die "Failure to extract file list from package $pkgfile"
+}
+
 trim_word()
 {
 	echo "$1" | (read word; echo $word)
@@ -109,6 +117,24 @@ control_arch()
 		die "Unable to determine package architecture"
 	fi
 	echo $arch
+}
+
+control_section()
+{
+	local file="$1"
+	test -f "$file" || die "Control file $file does not exist."
+	trim_word "$(grep '^Section: ' "$file" | sed -e 's/^Section: \(.*\)/\1/')" || true
+}
+
+control_pkgname()
+{
+	local file="$1"
+	test -f "$file" || die "Control file $file does not exist."
+	local name="$(trim_word "$(grep '^Package: ' "$file" | sed -e 's/^Package: \(.*\)/\1/')")"
+	if [ $? -ne 0 ] || [ -z "$name" ]; then
+		die "Unable to determine package name"
+	fi
+	echo $name
 }
 
 control_description()
@@ -150,9 +176,18 @@ extract_package_info()
 	local data_decompress_opt="$(get_compress_opt "$data_file")"
 
 	extract_control "$debfile" > "$pkg_meta_dir/control" || die "Unable to extract package control file"
+	extract_filelist "$debfile" > "$pkg_meta_dir/filelist" || die "Unable to extract package file list"
 
 	local arch="$(control_arch "$pkg_meta_dir/control")" || die "Unabled to extract package architecture"
 	echo "$arch" > "$pkg_meta_dir/architecture"
+
+	local name="$(control_pkgname "$pkg_meta_dir/control")" || die "Unable to extract package name"
+	echo "$name" > "$pkg_meta_dir/name"
+
+	local section="$(control_section "$pkg_meta_dir/control")" || die "Unable to extract package section"
+	if ! [ -z "$section" ]; then
+		echo "$section" > "$pkg_meta_dir/section"
+	fi
 
 	# Link the package file.
 	ln -s "$debfile" "$pkg_meta_dir/package.deb"
@@ -252,8 +287,10 @@ dist_index_files()
 		while IFS="" read -r component; do
 			get_dist_architectures "$dist_dir" | (
 				while IFS="" read -r arch; do
-					# /All/ files in the dist meta are index files.
-					(cd "$dist_dir"; ls -d "$component/binary-$arch/"*)
+					# We have a Packages index in <component>/binary-<arch>/, and also a Contents-<arg>.gz index under <component>/
+					(cd "$dist_dir"; \
+						ls -d "$component/binary-$arch/"*; \
+						ls -d "$component/Contents-"*.gz)
 				done
 			)
 		done
@@ -316,6 +353,7 @@ copy_meta_to_repo()
 			if [ -z "$SKIP_SIGN" ]; then
 				cp "$dist_meta/InRelease" "$dist_meta/Release.gpg" "$target" || die "Failed to copy release index files"
 			fi
+
 			echo "$(get_dist_components "$dist_meta")" | (
 				while IFS="" read -r component; do
 					cp -r "$dist_meta/$component" "$target"
@@ -323,6 +361,21 @@ copy_meta_to_repo()
 			)
 		done
 	)
+}
+
+build_contents_entries()
+{
+	local pkg_meta_dir="$1"
+
+	local section_prefix=""
+	if [ -f "$pkg_meta_dir/section" ]; then
+		section_prefix="$(cat "$pkg_meta_dir/section")/"
+	fi
+
+	local pkg_name="$(cat "$pkg_meta_dir/name")" || die "Unable to read package name from extracted information"
+	while IFS="" read -r path; do
+		printf '%-60s %s\n' "$path" "$section_prefix$pkg_name"
+	done <"$pkg_meta_dir/filelist" || die "Error writing package contents"
 }
 
 add_packages_to_dist()
@@ -347,12 +400,15 @@ add_packages_to_dist()
 
 		# Create the arch directory for this component.
 		mkdir -p "$dist_meta_dir/$component/binary-$arch"
-		local index="$dist_meta_dir/$component/binary-$arch/Packages"
+		local pkg_index="$dist_meta_dir/$component/binary-$arch/Packages"
 
-		if [ -s "$index" ]; then
-			echo "" >> "$index"
+		if [ -s "$pkg_index" ]; then
+			echo "" >> "$pkg_index"
 		fi
-		build_packages_entry "$pkg_meta_dir" >> "$index"
+		build_packages_entry "$pkg_meta_dir" >> "$pkg_index"
+
+		local contents_index="$dist_meta_dir/$component/Contents-$arch"
+		build_contents_entries "$pkg_meta_dir" >> "$contents_index"
 	done
 }
 
@@ -366,6 +422,13 @@ build_dist()
 	mkdir "$dist_meta"
 	find_dist_debs "$pkg_dir" "$dist_name" > "$dist_meta/pkglist" || die "Error locating package files"
 	add_packages_to_dist "$pkg_dir" "$dist_meta" < "$dist_meta/pkglist" || die "Error adding packages to dist $dist_name"
+
+	# The Contents index(es) must be gzipped.
+	echo "$(get_dist_components "$dist_meta")" | (
+		while  IFS="" read -r component; do
+			ls "$dist_meta/$component"/Contents-* | xargs -n 1 gzip
+		done
+	)
 
 	build_dist_meta "$dist_meta" "$dist_name" || die "Failure building Release information for dist $dist_name"
 }
