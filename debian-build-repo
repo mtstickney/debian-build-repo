@@ -50,7 +50,9 @@ get_workdir()
 
 on_exit()
 {
+	retcode="$?"
 	cleanup_workspace
+	return "$?"
 }
 
 trap on_exit EXIT
