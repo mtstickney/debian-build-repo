@@ -454,8 +454,8 @@ build_repo()
 
 	local meta_dir="$(get_workdir meta)"
 
-	mkdir -p "$meta_dir"
-	(cd "$meta_dir"; ls -A | xargs -n 1 rm -rf) || die "Error clearing output directory contents"
+	rm -rf "$meta_dir" || die "Error removing work directory $meta_dir"
+	mkdir -p "$meta_dir" || die "Error recreating work directory $meta_dir"
 
 	ls "$pkg_dir" | (
 		while IFS="" read -r dist; do
@@ -464,11 +464,11 @@ build_repo()
 		done
 	)
 
-	rm -rf "$repo_dir"
-	mkdir -p "$repo_dir"
+	mkdir -p "$repo_dir" || die "Error creating target repo directory $repo_dir"
+	(cd "$repo_dir" && ls -A | xargs -n 1 rm -rf) || die "Error clearing output directory contents"
 	local pkg_path="$(make_absolute_path "$pkg_dir")"
 	# Link in the package pool
-	ln -s "$pkg_path" "$repo_dir/pool"
+	ln -s "$pkg_path" "$repo_dir/pool" || die "Error linking package directory $pkg_path to repo at $repo_dir"
 	copy_meta_to_repo "$meta_dir" "$repo_dir" || die "Failed to copy repository information to repository"
 
 	if [ -z "$SKIP_SIGN" ]; then
