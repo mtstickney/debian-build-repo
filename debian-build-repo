@@ -42,6 +42,7 @@ init_workspace()
 get_workdir()
 {
 	local name="$1"
+	[ -z "$TMPDIR" ] && die "Workspace has not been initialized, can't get a workdir."
 	echo "$TMPDIR/$name"
 }
 
