@@ -452,8 +452,8 @@ build_repo()
 
 	local meta_dir="$(get_workdir meta)"
 
-	rm -rf "$meta_dir"
 	mkdir -p "$meta_dir"
+	(cd "$meta_dir"; ls -A | xargs -n 1 rm -rf) || die "Error clearing output directory contents"
 
 	ls "$pkg_dir" | (
 		while IFS="" read -r dist; do
