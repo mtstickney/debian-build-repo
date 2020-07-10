@@ -151,8 +151,8 @@ extract_package_info()
 
 	extract_control "$debfile" > "$pkg_meta_dir/control" || die "Unable to extract package control file"
 
-	local ARCH="$(control_arch "$pkg_meta_dir/control")" || die "Unabled to extract package architecture"
-	echo "$ARCH" > "$pkg_meta_dir/architecture"
+	local arch="$(control_arch "$pkg_meta_dir/control")" || die "Unabled to extract package architecture"
+	echo "$arch" > "$pkg_meta_dir/architecture"
 
 	# Link the package file.
 	ln -s "$debfile" "$pkg_meta_dir/package.deb"
