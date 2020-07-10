@@ -178,7 +178,6 @@ build_packages_entry()
 	echo "$package_field"
 
 	local description="$(control_description "$control_file")" || die "Unable to extract package control description"
-	echo "$description" > latest_description.txt
 	local md5sum_checksum="$(echo "$description" | md5sum | awk '{print $1}')" || die "Error checksumming package description"
 	# Note that we avoid stripping possibly invalid duplicate Package:
 	# fields by bailing out if there is more than one of them above.
